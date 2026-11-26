@@ -502,7 +502,7 @@
     {
       "project": "kernel/samsung/universal8890",
       "base": "dcadf09ba0cd4215c5e1ad4bff2bf6edc4f85db2",
-      "head": "af641a4c98339f90a8eef7537a53f6b1a9b85025",
+      "head": "57af758d2bf2298690bfba532d461ca79d55afc9",
       "upstream_url": "https://github.com/8890q/android_kernel_samsung_universal8890",
       "upstream_branch": "lineage-24.0",
       "patches": [
@@ -540,11 +540,109 @@
           "subject": "prctl: Allow local CAP_CHECKPOINT_RESTORE to change /proc/self/exe",
           "patch_id": "9aaf7448587aa83571bb3028609ee506f304fafc",
           "sha256": "bd145cebd6e5cf9249689bdb0cbbd29abddd3b47de1d3023a054f3a93e817e0d"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0006-ANDROID-cpufreq-track-per-task-time-in-state.patch",
+          "commit": "e73635b2d5c33d6012ecbe704bd1d80315f88752",
+          "subject": "ANDROID: cpufreq: track per-task time in state",
+          "patch_id": "b4c4966e83a0b5ca3d7a6c65a0bb0e4f27a1e4bb",
+          "sha256": "bd8655d0a1c7cae94c223851af41e14ece845f9dd97e0b612522697f51365d83"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0007-ANDROID-cpufreq-times-track-per-uid-time-in-state.patch",
+          "commit": "e818457768c192101eec8c6e6a63e7c499d74a4b",
+          "subject": "ANDROID: cpufreq: times: track per-uid time in state",
+          "patch_id": "1ef8f329cbc7b44d98bd3b525e55fa44cff07e1c",
+          "sha256": "dc1f394ce8a89f1b356c93a712d9e90b064f01f5f67d84f0f809849a16529863"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0008-ANDROID-cpufreq-Add-time_in_state-to-proc-uid-direct.patch",
+          "commit": "c4521cb2b7c253b166b42ba77b02e1359731e1f2",
+          "subject": "ANDROID: cpufreq: Add time_in_state to /proc/uid directories",
+          "patch_id": "a49614e3356dd8c52225a3f1498d17716b1363e5",
+          "sha256": "cc2f7528a3eb8e1defc45195c04c2b8de30b346dd51a517c1aa340fcb879d136"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0009-ANDROID-cpufreq-times-avoid-prematurely-freeing-uid_.patch",
+          "commit": "e5d19fab16d1634e822a137602e1e184edcebad7",
+          "subject": "ANDROID: cpufreq: times: avoid prematurely freeing uid_entry",
+          "patch_id": "90ff8ba6986cd9deef84e8b96b6463a2f93b386e",
+          "sha256": "e7ab81ee2cce5a38626d6ebaa38ae70c1fcd2f33dc1bdb8d89f759349d68c59d"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0010-ANDROID-cpufreq-times-fix-proc_time_in_state_show.patch",
+          "commit": "290b240a3fe25c7581371e09f859de4f6f9c6a90",
+          "subject": "ANDROID: cpufreq: times: fix proc_time_in_state_show",
+          "patch_id": "e535f6eea5720e879c65174ed7d0bc40ca3d9ac6",
+          "sha256": "1e0238e4d02e1f2722fc742c8074b432d88d210acb69579664743f3d9aa4a075"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0011-ANDROID-cpufreq-times-allocate-enough-space-for-a-ui.patch",
+          "commit": "4af29e2feeba60fa7bbaad91b663839a09483773",
+          "subject": "ANDROID: cpufreq: times: allocate enough space for a uid_entry",
+          "patch_id": "b3adb9720be16705f5f1d00b8601b28ad78ce8ab",
+          "sha256": "b51537a4399642bc6cf829aae2fe449d23810764be86d3898062358e6e518eca"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0012-ANDROID-cpufreq-times-skip-printing-invalid-frequenc.patch",
+          "commit": "27691ccbcd36097e99804603b8c88ff5c6d24849",
+          "subject": "ANDROID: cpufreq: times: skip printing invalid frequencies",
+          "patch_id": "479097956e3339ff122cfc9a962ea3468b6ef16e",
+          "sha256": "940f706d6032135c543e6f0fed9db3074e69f1f25171f3fc16cb0f5eba0d59a1"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0013-ANDROID-Fix-massive-cpufreq_times-memory-leaks.patch",
+          "commit": "0d3f134d6f20df5076448311286ebe031b871129",
+          "subject": "ANDROID: Fix massive cpufreq_times memory leaks",
+          "patch_id": "372bc851813123414d0d5fb711139ac0897a127e",
+          "sha256": "a603cadbe6b8b38b33e29ccdf61b5bb173b325b200a62242565c606402283bf8"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0014-ANDROID-cpufreq-times-add-proc-uid_concurrent_-activ.patch",
+          "commit": "7f7619e12985ea1b65351775278a99835beb7b8e",
+          "subject": "ANDROID: cpufreq: times: add /proc/uid_concurrent_{active,policy}_time",
+          "patch_id": "76574a20ec469d4780b0ff4caeb937ebc7d22b78",
+          "sha256": "5486b9cffad2e1f3d27a8a42eeef816fa5caeb2e0e704b614102b3045932dbaa"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0015-ANDROID-cpufreq-times-optimize-proc-files.patch",
+          "commit": "f6bc0f90a61aaab8a0ee16e9281d714039d167a8",
+          "subject": "ANDROID: cpufreq: times: optimize proc files",
+          "patch_id": "e391bcbe81f1df5541ce6510a6f294a79a1e4bf4",
+          "sha256": "1800ab3021a1d30cba8c7dde63264b1cb956a4d54314f8074fb2ab4cd1f64b66"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0016-arm64-configs-enable-per-UID-CPU-frequency-accountin.patch",
+          "commit": "e22a08d9d308e03f1bc0e55fba156531e96ea681",
+          "subject": "arm64: configs: enable per-UID CPU frequency accounting for universal8890",
+          "patch_id": "caedd4567b6dd11f385100b3b567523626e2899f",
+          "sha256": "95a5846539d3309765c0e1380e525fe56c354dea4278f19d31b6e6ef55cff6f3"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0017-bpf-resolve-constant-branches-and-verify-cyclic-path.patch",
+          "commit": "61f9af6b68b3382c801ee4d86a8ec405e45d2d17",
+          "subject": "bpf: resolve constant branches and verify cyclic paths without pruning",
+          "patch_id": "c4daf65e6a0afae716e6ef030ba70d0a7f553f51",
+          "sha256": "8b796cbd3fa6be6e7a89bad802f0ea05d7d4553551d54a90426bc95d444cdbeb"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0018-cpufreq-times-use-the-legacy-seq_file-delimiter-API.patch",
+          "commit": "7731f3ca622db73ce56d8b4531f0aa6c5daf8003",
+          "subject": "cpufreq: times: use the legacy seq_file delimiter API",
+          "patch_id": "9ffb052453f6e95cda50f7c4706f4d657fa086e9",
+          "sha256": "95c227e3215b37338aa88dc5f6d8cfe9275cb20a31cdebf1f8ca9c9ca8ec853d"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0019-bpf-preserve-constant-ALU-results-through-loop-exit-.patch",
+          "commit": "57af758d2bf2298690bfba532d461ca79d55afc9",
+          "subject": "bpf: preserve constant ALU results through loop-exit masks",
+          "patch_id": "46536288081703beaa2ef3a12a2dfd4e47e9db0c",
+          "sha256": "c3f0edf25177e605d2747540b64509256f36a2dd1285f2e9eb9676c97f8482dd"
         }
       ],
       "base_tree": "8fe0d80ad40dd8f157b379eca962c3a822b68caf",
-      "target_tree": "7befbb6ee2994fd65aca0a9f23d69ef9ad1f06e5",
-      "validation": "PASS: exact tree replay"
+      "target_tree": "7d40134b25fcfc002500babab7548f994267b007",
+      "validation": "PASS: exact tree replay; herolte kernel build, boot and device tests"
     },
     {
       "project": "packages/modules/Connectivity",

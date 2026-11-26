@@ -1,0 +1,35 @@
+From e22a08d9d308e03f1bc0e55fba156531e96ea681 Mon Sep 17 00:00:00 2001
+From: ivanmeler <i_ivan@windowslive.com>
+Date: Thu, 26 Nov 2026 12:22:05 +0000
+Subject: [PATCH 16/19] arm64: configs: enable per-UID CPU frequency accounting
+ for universal8890
+
+---
+ arch/arm64/configs/exynos8890-hero2lte_defconfig | 1 +
+ arch/arm64/configs/exynos8890-herolte_defconfig  | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/arch/arm64/configs/exynos8890-hero2lte_defconfig b/arch/arm64/configs/exynos8890-hero2lte_defconfig
+index 24b5f9723a9f..a8bba3946eb5 100644
+--- a/arch/arm64/configs/exynos8890-hero2lte_defconfig
++++ b/arch/arm64/configs/exynos8890-hero2lte_defconfig
+@@ -631,6 +631,7 @@ CONFIG_ARM64_EXYNOS_CPUIDLE=y
+ CONFIG_CPU_FREQ=y
+ # CONFIG_CPU_FREQ_SCHEDUTIL_PERFSTAT_TRIGGER is not set
+ CONFIG_CPU_FREQ_STAT=y
++CONFIG_CPU_FREQ_TIMES=y
+ # CONFIG_CPU_FREQ_STAT_DETAILS is not set
+ # CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE is not set
+ # CONFIG_CPU_FREQ_DEFAULT_GOV_POWERSAVE is not set
+diff --git a/arch/arm64/configs/exynos8890-herolte_defconfig b/arch/arm64/configs/exynos8890-herolte_defconfig
+index e0a959f5e889..4b08624cf18e 100644
+--- a/arch/arm64/configs/exynos8890-herolte_defconfig
++++ b/arch/arm64/configs/exynos8890-herolte_defconfig
+@@ -631,6 +631,7 @@ CONFIG_ARM64_EXYNOS_CPUIDLE=y
+ CONFIG_CPU_FREQ=y
+ # CONFIG_CPU_FREQ_SCHEDUTIL_PERFSTAT_TRIGGER is not set
+ CONFIG_CPU_FREQ_STAT=y
++CONFIG_CPU_FREQ_TIMES=y
+ # CONFIG_CPU_FREQ_STAT_DETAILS is not set
+ # CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE is not set
+ # CONFIG_CPU_FREQ_DEFAULT_GOV_POWERSAVE is not set

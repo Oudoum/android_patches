@@ -1,0 +1,36 @@
+From e5d19fab16d1634e822a137602e1e184edcebad7 Mon Sep 17 00:00:00 2001
+From: Connor O'Brien <connoro@google.com>
+Date: Tue, 20 Mar 2018 16:01:43 -0700
+Subject: [PATCH 09/19] ANDROID: cpufreq: times: avoid prematurely freeing
+ uid_entry
+
+__krealloc may return the same pointer that's passed in if the
+original allocation provided enough memory to accommodate the new
+request. In this case the "old" uid_entry should not be freed or
+replaced in uid_hash_table, so add a check to avoid doing so.
+
+Bug: 74338318
+Test: Hikey960 boots & shows reasonable UID numbers
+Change-Id: Id1a094f60a8ffcc827358d0f40c9f3ff70719cce
+Signed-off-by: Connor O'Brien <connoro@google.com>
+---
+ drivers/cpufreq/cpufreq_times.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/cpufreq/cpufreq_times.c b/drivers/cpufreq/cpufreq_times.c
+index b74017f06a8e..326a5e1acdc6 100644
+--- a/drivers/cpufreq/cpufreq_times.c
++++ b/drivers/cpufreq/cpufreq_times.c
+@@ -105,8 +105,10 @@ static struct uid_entry *find_or_register_uid_locked(uid_t uid)
+ 		memset(temp->time_in_state + uid_entry->max_state, 0,
+ 		       (max_state - uid_entry->max_state) *
+ 		       sizeof(uid_entry->time_in_state[0]));
+-		hlist_replace_rcu(&uid_entry->hash, &temp->hash);
+-		kfree_rcu(uid_entry, rcu);
++		if (temp != uid_entry) {
++			hlist_replace_rcu(&uid_entry->hash, &temp->hash);
++			kfree_rcu(uid_entry, rcu);
++		}
+ 		return temp;
+ 	}
+ 

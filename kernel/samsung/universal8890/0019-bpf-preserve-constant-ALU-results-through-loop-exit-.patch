@@ -1,0 +1,58 @@
+From 57af758d2bf2298690bfba532d461ca79d55afc9 Mon Sep 17 00:00:00 2001
+From: ivanmeler <i_ivan@windowslive.com>
+Date: Thu, 26 Nov 2026 12:33:06 +0000
+Subject: [PATCH 19/19] bpf: preserve constant ALU results through loop-exit
+ masks
+
+---
+ kernel/bpf/verifier.c | 37 +++++++++++++++++++++++++++----------
+ 1 file changed, 27 insertions(+), 10 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 96eadd691297..f289d5fae997 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -1837,16 +1837,33 @@ static int evaluate_reg_imm_alu(struct bpf_verifier_env *env,
+ 	if (BPF_SRC(insn->code) == BPF_X && src_reg->type == UNKNOWN_VALUE)
+ 		return evaluate_reg_imm_alu_unknown(env, insn);
+ 
+-	/* dst_reg->type == CONST_IMM here, simulate execution of 'add' insn.
+-	 * Don't care about overflow or negative values, just add them
+-	 */
+-	if (opcode == BPF_ADD && BPF_SRC(insn->code) == BPF_K)
+-		dst_reg->imm += insn->imm;
+-	else if (opcode == BPF_ADD && BPF_SRC(insn->code) == BPF_X &&
+-		 src_reg->type == CONST_IMM)
+-		dst_reg->imm += src_reg->imm;
+-	else
+-		mark_reg_unknown_value(regs, insn->dst_reg);
++	if (BPF_SRC(insn->code) == BPF_K || src_reg->type == CONST_IMM) {
++		u64 dst = dst_reg->imm;
++		u64 src = BPF_SRC(insn->code) == BPF_K ?
++			(s64)insn->imm : src_reg->imm;
++
++		/* Preserve exact constants, including boolean masks emitted by
++		 * Clang at loop exits.  Use unsigned arithmetic for wraparound.
++		 */
++		switch (opcode) {
++		case BPF_ADD:
++			dst_reg->imm = dst + src;
++			return 0;
++		case BPF_SUB:
++			dst_reg->imm = dst - src;
++			return 0;
++		case BPF_AND:
++			dst_reg->imm = dst & src;
++			return 0;
++		case BPF_OR:
++			dst_reg->imm = dst | src;
++			return 0;
++		case BPF_XOR:
++			dst_reg->imm = dst ^ src;
++			return 0;
++		}
++	}
++	mark_reg_unknown_value(regs, insn->dst_reg);
+ 	return 0;
+ }
+ 

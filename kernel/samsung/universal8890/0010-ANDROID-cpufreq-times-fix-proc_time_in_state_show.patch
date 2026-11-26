@@ -1,0 +1,37 @@
+From 290b240a3fe25c7581371e09f859de4f6f9c6a90 Mon Sep 17 00:00:00 2001
+From: Connor O'Brien <connoro@google.com>
+Date: Mon, 26 Mar 2018 18:30:11 -0700
+Subject: [PATCH 10/19] ANDROID: cpufreq: times: fix proc_time_in_state_show
+
+Read times from p->time_in_state. Remove the "times" pointer, which is
+never initialized.
+
+Bug: 75238970
+Test: /proc/<pid>/time_in_state now shows some nonzero values
+Change-Id: I2f375b64ec39de034da3e24e5e5fb58b04958b76
+Signed-off-by: Connor O'Brien <connoro@google.com>
+---
+ drivers/cpufreq/cpufreq_times.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/cpufreq/cpufreq_times.c b/drivers/cpufreq/cpufreq_times.c
+index 326a5e1acdc6..a226e39275b0 100644
+--- a/drivers/cpufreq/cpufreq_times.c
++++ b/drivers/cpufreq/cpufreq_times.c
+@@ -289,7 +289,6 @@ int proc_time_in_state_show(struct seq_file *m, struct pid_namespace *ns,
+ 	unsigned int cpu, i;
+ 	cputime_t cputime;
+ 	unsigned long flags;
+-	u64 *times;
+ 	struct cpu_freqs *freqs;
+ 	struct cpu_freqs *last_freqs = NULL;
+ 
+@@ -307,7 +306,7 @@ int proc_time_in_state_show(struct seq_file *m, struct pid_namespace *ns,
+ 			cputime = 0;
+ 			if (freqs->offset + i < p->max_state &&
+ 			    p->time_in_state)
+-				cputime = times[freqs->offset + i];
++				cputime = p->time_in_state[freqs->offset + i];
+ 			seq_printf(m, "%u %lu\n", freqs->freq_table[i],
+ 				   (unsigned long)cputime_to_clock_t(cputime));
+ 		}

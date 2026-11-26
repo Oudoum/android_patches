@@ -1,0 +1,36 @@
+From 27691ccbcd36097e99804603b8c88ff5c6d24849 Mon Sep 17 00:00:00 2001
+From: Connor O'Brien <connoro@google.com>
+Date: Tue, 3 Apr 2018 16:05:37 -0700
+Subject: [PATCH 12/19] ANDROID: cpufreq: times: skip printing invalid
+ frequencies
+
+The header of /proc/uid_time_in_state should match the logic used for
+the rest of the file by skipping invalid frequency table entries.
+
+Test: Read /proc/uid_time_in_state and check for invalid frequencies
+in header.
+Signed-off-by: Connor O'Brien <connoro@google.com>
+
+Change-Id: I96888e7b71f4928383ff7080c98c988d5fe1a95c
+---
+ drivers/cpufreq/cpufreq_times.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/cpufreq/cpufreq_times.c b/drivers/cpufreq/cpufreq_times.c
+index dd4ff655e5fe..e5df7a47cc16 100644
+--- a/drivers/cpufreq/cpufreq_times.c
++++ b/drivers/cpufreq/cpufreq_times.c
+@@ -203,8 +203,12 @@ static int uid_time_in_state_seq_show(struct seq_file *m, void *v)
+ 			if (!freqs || freqs == last_freqs)
+ 				continue;
+ 			last_freqs = freqs;
+-			for (i = 0; i < freqs->max_state; i++)
++			for (i = 0; i < freqs->max_state; i++) {
++				if (freqs->freq_table[i] ==
++				    CPUFREQ_ENTRY_INVALID)
++					continue;
+ 				seq_printf(m, " %d", freqs->freq_table[i]);
++			}
+ 		}
+ 		seq_putc(m, '\n');
+ 	}

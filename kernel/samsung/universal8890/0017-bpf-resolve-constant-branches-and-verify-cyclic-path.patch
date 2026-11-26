@@ -1,0 +1,131 @@
+From 61f9af6b68b3382c801ee4d86a8ec405e45d2d17 Mon Sep 17 00:00:00 2001
+From: ivanmeler <i_ivan@windowslive.com>
+Date: Thu, 26 Nov 2026 12:26:25 +0000
+Subject: [PATCH 17/19] bpf: resolve constant branches and verify cyclic paths
+ without pruning
+
+The legacy verifier only folds equal immediate JEQ/JNE operands. It forks
+impossible paths for all other constant comparisons, exhausting its state
+stack on Android's bounded power-supply socket filter.
+
+Evaluate constant comparisons with the correct signed/unsigned semantics
+for both immediate and register operands. Keep memory and register checks
+on every reachable path.
+
+This tree already permits CFG back edges, but its state cache assumes an
+acyclic graph and records states before their successors have completed.
+Reusing such a state can accept an infinite loop. Detect cyclic CFGs and
+verify them without this DAG-only optimization. Retain the existing
+instruction and state-stack limits; accepted cyclic programs must finish
+verification through BPF_EXIT on every reachable path.
+---
+ include/linux/bpf_verifier.h |  1 +
+ kernel/bpf/verifier.c        | 68 ++++++++++++++++++++++++++----------
+ 2 files changed, 51 insertions(+), 18 deletions(-)
+
+diff --git a/include/linux/bpf_verifier.h b/include/linux/bpf_verifier.h
+index e9e6aa43f2e6..3f4e76e8c302 100644
+--- a/include/linux/bpf_verifier.h
++++ b/include/linux/bpf_verifier.h
+@@ -129,6 +129,7 @@ struct bpf_verifier_env {
+ 	bool allow_ptr_leaks;
+ 	bool seen_direct_write;
+ 	bool varlen_map_value_access;
++	bool has_loops;		/* CFG contains a back edge */
+ 	struct bpf_insn_aux_data *insn_aux_data; /* array of per-insn state */
+ };
+ 
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index cb1025e0c341..96eadd691297 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -2537,23 +2537,46 @@ static int check_cond_jmp_op(struct bpf_verifier_env *env,
+ 
+ 	dst_reg = &regs[insn->dst_reg];
+ 
+-	/* detect if R == 0 where R was initialized to zero earlier */
+-	if (BPF_SRC(insn->code) == BPF_K &&
+-	    (opcode == BPF_JEQ || opcode == BPF_JNE) &&
+-	    dst_reg->type == CONST_IMM && dst_reg->imm == insn->imm) {
+-		if (opcode == BPF_JEQ) {
+-			/* if (imm == imm) goto pc+off;
+-			 * only follow the goto, ignore fall-through
+-			 */
+-			*insn_idx += insn->off;
+-			return 0;
+-		} else {
+-			/* if (imm != imm) goto pc+off;
+-			 * only follow fall-through branch, since
+-			 * that's where the program will go
+-			 */
+-			return 0;
++	/* A constant comparison has only one reachable successor.  In
++	 * particular, do not fork an impossible path on each loop iteration.
++	 */
++	if (dst_reg->type == CONST_IMM &&
++	    (BPF_SRC(insn->code) == BPF_K ||
++	     regs[insn->src_reg].type == CONST_IMM)) {
++		u64 dst = dst_reg->imm;
++		u64 src = BPF_SRC(insn->code) == BPF_K ?
++			(s64)insn->imm : regs[insn->src_reg].imm;
++		bool taken;
++
++		switch (opcode) {
++		case BPF_JEQ:
++			taken = dst == src;
++			break;
++		case BPF_JNE:
++			taken = dst != src;
++			break;
++		case BPF_JGT:
++			taken = dst > src;
++			break;
++		case BPF_JGE:
++			taken = dst >= src;
++			break;
++		case BPF_JSGT:
++			taken = (s64)dst > (s64)src;
++			break;
++		case BPF_JSGE:
++			taken = (s64)dst >= (s64)src;
++			break;
++		case BPF_JSET:
++			taken = (dst & src) != 0;
++			break;
++		default:
++			verbose("invalid BPF_JMP opcode %x\n", opcode);
++			return -EINVAL;
+ 		}
++		if (taken)
++			*insn_idx += insn->off;
++		return 0;
+ 	}
+ 
+ 	other_branch = push_stack(env, *insn_idx + insn->off + 1, *insn_idx);
+@@ -2808,8 +2831,8 @@ static int push_insn(int t, int w, int e, struct bpf_verifier_env *env)
+ 		insn_stack[cur_stack++] = w;
+ 		return 1;
+ 	} else if ((insn_state[w] & 0xF0) == DISCOVERED) {
+-	//	verbose("back-edge from insn %d to %d\n", t, w);
+-	//	return -EINVAL;
++		env->has_loops = true;
++		insn_state[t] = DISCOVERED | e;
+ 	} else if (insn_state[w] == EXPLORED) {
+ 		/* forward- or cross-edge */
+ 		insn_state[t] = DISCOVERED | e;
+@@ -3091,6 +3114,15 @@ static int is_state_visited(struct bpf_verifier_env *env, int insn_idx)
+ 	struct bpf_verifier_state_list *new_sl;
+ 	struct bpf_verifier_state_list *sl;
+ 
++	/* Cached states are recorded before their successors are proven safe.
++	 * That is valid only for an acyclic CFG.  With loops, reusing an active
++	 * state could incorrectly accept a nonterminating path.  Explore these
++	 * programs without pruning; the existing instruction and stack limits
++	 * bound verification, and every accepted path must reach BPF_EXIT.
++	 */
++	if (env->has_loops)
++		return 0;
++
+ 	sl = env->explored_states[insn_idx];
+ 	if (!sl)
+ 		/* this 'insn_idx' instruction wasn't marked, so we will not
