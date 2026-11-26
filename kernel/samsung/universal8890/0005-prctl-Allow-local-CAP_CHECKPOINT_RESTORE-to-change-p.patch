@@ -1,0 +1,47 @@
+From af641a4c98339f90a8eef7537a53f6b1a9b85025 Mon Sep 17 00:00:00 2001
+From: Nicolas Viennot <Nicolas.Viennot@twosigma.com>
+Date: Sun, 19 Jul 2020 12:04:15 +0200
+Subject: [PATCH 5/5] prctl: Allow local CAP_CHECKPOINT_RESTORE to change
+ /proc/self/exe
+
+Require checkpoint/restore privilege when PR_SET_MM_MAP changes the
+executable. Retain SYS_ADMIN as the capability compatibility fallback.
+
+Upstream commit: ebd6de6812387a2db9a52842cfbe004da1dd3be8
+Backport notes: this older tree checks executable credentials in
+validate_prctl_map(), using a UID/GID-zero test. Replace that test
+at its existing location. Adapted by ivanmeler.
+
+Signed-off-by: ivanmeler <i_ivan@windowslive.com>
+---
+ kernel/sys.c | 17 ++++-------------
+ 1 file changed, 4 insertions(+), 13 deletions(-)
+
+diff --git a/kernel/sys.c b/kernel/sys.c
+index b5e47e110971..94835357d7b0 100644
+--- a/kernel/sys.c
++++ b/kernel/sys.c
+@@ -1989,19 +1989,10 @@ static int validate_prctl_map(struct prctl_mm_map *prctl_map)
+ 			goto out;
+ 	}
+ 
+-	/*
+-	 * Finally, make sure the caller has the rights to
+-	 * change /proc/pid/exe link: only local root should
+-	 * be allowed to.
+-	 */
+-	if (prctl_map->exe_fd != (u32)-1) {
+-		struct user_namespace *ns = current_user_ns();
+-		const struct cred *cred = current_cred();
+-
+-		if (!uid_eq(cred->uid, make_kuid(ns, 0)) ||
+-		    !gid_eq(cred->gid, make_kgid(ns, 0)))
+-			goto out;
+-	}
++	/* Changing /proc/pid/exe requires local checkpoint/restore privilege. */
++	if (prctl_map->exe_fd != (u32)-1 &&
++	    !checkpoint_restore_ns_capable(current_user_ns()))
++		goto out;
+ 
+ 	error = 0;
+ out:

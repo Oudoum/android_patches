@@ -1,0 +1,159 @@
+From 77ac1a114e5812e0202f0f4b53ddb477fceebacd Mon Sep 17 00:00:00 2001
+From: Alexey Budankov <alexey.budankov@linux.intel.com>
+Date: Thu, 2 Apr 2020 11:45:31 +0300
+Subject: [PATCH 1/5] capabilities: backport CAP_PERFMON and perf permission
+ checks
+
+Add capability 38 and its SELinux permission mapping, and allow the
+separate capability through the existing perf paranoid and ptrace checks.
+Keep CAP_SYS_ADMIN as the backwards-compatible fallback. Include the
+oprofile permission check present in this tree.
+
+The Android 17 native zygote enumerates capability 38 while reducing the
+child bounding set. The old CAP_LAST_CAP=37 makes PR_CAPBSET_READ fail
+with EINVAL and the native zygote abort before starting Chromium.
+
+Adapted from Linux commits:
+commit 980737282232 ("capabilities: Introduce CAP_PERFMON to kernel and user space")
+commit 18aa18566218 ("perf/core: Open access to the core for CAP_PERFMON privileged process")
+commit 45fd22da97c6 ("perf/core: Take over CAP_SYS_PTRACE creds to CAP_PERFMON capability")
+commit ab76878bb720 ("drivers/oprofile: Open access for CAP_PERFMON privileged process")
+
+Reference-backport: https://github.com/LineageOS/android_kernel_amazon_mt8169/commit/99ef80d3fd5f3100490ad36ee88353310534c9c6
+
+Backport notes: combine the upstream capability definition and permission
+checks present in the Exynos 8890 tree. Adapted by ivanmeler.
+
+Signed-off-by: ivanmeler <i_ivan@windowslive.com>
+---
+ drivers/oprofile/event_buffer.c     | 2 +-
+ include/linux/capability.h          | 5 +++++
+ include/linux/perf_event.h          | 6 +++---
+ include/uapi/linux/capability.h     | 5 ++++-
+ kernel/events/core.c                | 7 ++++---
+ security/selinux/include/classmap.h | 6 +++++-
+ 6 files changed, 22 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/oprofile/event_buffer.c b/drivers/oprofile/event_buffer.c
+index c0cc4e7ff023..b594201a194b 100644
+--- a/drivers/oprofile/event_buffer.c
++++ b/drivers/oprofile/event_buffer.c
+@@ -113,7 +113,7 @@ static int event_buffer_open(struct inode *inode, struct file *file)
+ {
+ 	int err = -EPERM;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!perfmon_capable())
+ 		return -EPERM;
+ 
+ 	if (test_and_set_bit_lock(0, &buffer_opened))
+diff --git a/include/linux/capability.h b/include/linux/capability.h
+index b20ffe23a09b..55dfbfafb43b 100644
+--- a/include/linux/capability.h
++++ b/include/linux/capability.h
+@@ -250,6 +250,11 @@ extern bool capable_wrt_inode_uidgid(const struct inode *inode, int cap);
+ extern bool file_ns_capable(const struct file *file, struct user_namespace *ns, int cap);
+ extern bool ptracer_capable(struct task_struct *tsk, struct user_namespace *ns);
+ 
++static inline bool perfmon_capable(void)
++{
++	return capable(CAP_PERFMON) || capable(CAP_SYS_ADMIN);
++}
++
+ /* audit system wants to get cap info from files as well */
+ extern int get_vfs_caps_from_disk(const struct dentry *dentry, struct cpu_vfs_cap_data *cpu_caps);
+ 
+diff --git a/include/linux/perf_event.h b/include/linux/perf_event.h
+index b8f64eefad49..bcd669866927 100644
+--- a/include/linux/perf_event.h
++++ b/include/linux/perf_event.h
+@@ -1060,21 +1060,21 @@ int perf_event_max_stack_handler(struct ctl_table *table, int write,
+ 
+ static inline int perf_allow_kernel(struct perf_event_attr *attr)
+ {
+-	if (sysctl_perf_event_paranoid > 1 && !capable(CAP_SYS_ADMIN))
++	if (sysctl_perf_event_paranoid > 1 && !perfmon_capable())
+ 		return -EACCES;
+ 	return security_perf_event_open(attr, PERF_SECURITY_KERNEL);
+ }
+ 
+ static inline int perf_allow_cpu(struct perf_event_attr *attr)
+ {
+-	if (sysctl_perf_event_paranoid > 0 && !capable(CAP_SYS_ADMIN))
++	if (sysctl_perf_event_paranoid > 0 && !perfmon_capable())
+ 		return -EACCES;
+ 	return security_perf_event_open(attr, PERF_SECURITY_CPU);
+ }
+ 
+ static inline int perf_allow_tracepoint(struct perf_event_attr *attr)
+ {
+-	if (sysctl_perf_event_paranoid > -1 && !capable(CAP_SYS_ADMIN))
++	if (sysctl_perf_event_paranoid > -1 && !perfmon_capable())
+ 		return -EPERM;
+ 	return security_perf_event_open(attr, PERF_SECURITY_TRACEPOINT);
+ }
+diff --git a/include/uapi/linux/capability.h b/include/uapi/linux/capability.h
+index 12c37a197d24..4eeb11bc4438 100644
+--- a/include/uapi/linux/capability.h
++++ b/include/uapi/linux/capability.h
+@@ -352,7 +352,10 @@ struct vfs_cap_data {
+ #define CAP_AUDIT_READ		37
+ 
+ 
+-#define CAP_LAST_CAP         CAP_AUDIT_READ
++/* Allow privileged performance monitoring and observability. */
++#define CAP_PERFMON		38
++
++#define CAP_LAST_CAP         CAP_PERFMON
+ 
+ #define cap_valid(x) ((x) >= 0 && (x) <= CAP_LAST_CAP)
+ 
+diff --git a/kernel/events/core.c b/kernel/events/core.c
+index e3770c95b348..d2570f273696 100644
+--- a/kernel/events/core.c
++++ b/kernel/events/core.c
+@@ -8533,7 +8533,7 @@ SYSCALL_DEFINE5(perf_event_open,
+ 	if (flags & ~PERF_FLAG_ALL)
+ 		return -EINVAL;
+ 
+-	if (perf_paranoid_any() && !capable(CAP_SYS_ADMIN))
++	if (perf_paranoid_any() && !perfmon_capable())
+ 		return -EACCES;
+ 
+ 	err = perf_copy_attr(attr_uptr, &attr);
+@@ -8611,7 +8611,7 @@ SYSCALL_DEFINE5(perf_event_open,
+ 			goto err_cpus;
+ 
+ 		/*
+-		 * Reuse ptrace permission checks for now.
++		 * Preserve ptrace permission checks for backwards compatibility.
+ 		 *
+ 		 * We must hold cred_guard_mutex across this and any potential
+ 		 * perf_install_in_context() call for this new event to
+@@ -8619,7 +8619,8 @@ SYSCALL_DEFINE5(perf_event_open,
+ 		 * perf_event_exit_task() that could imply).
+ 		 */
+ 		err = -EACCES;
+-		if (!ptrace_may_access(task, PTRACE_MODE_READ_REALCREDS))
++		if (!perfmon_capable() &&
++		    !ptrace_may_access(task, PTRACE_MODE_READ_REALCREDS))
+ 			goto err_cred;
+ 	}
+ 
+diff --git a/security/selinux/include/classmap.h b/security/selinux/include/classmap.h
+index 17c09cd7345f..4be4fa1fd80b 100644
+--- a/security/selinux/include/classmap.h
++++ b/security/selinux/include/classmap.h
+@@ -22,7 +22,11 @@
+ 	    "audit_control", "setfcap"
+ 
+ #define COMMON_CAP2_PERMS  "mac_override", "mac_admin", "syslog", \
+-		"wake_alarm", "block_suspend", "audit_read"
++		"wake_alarm", "block_suspend", "audit_read", "perfmon"
++
++#if CAP_LAST_CAP > CAP_PERFMON
++#error New capability defined, please update COMMON_CAP2_PERMS.
++#endif
+ 
+ /*
+  * Note: The name for any socket class should be suffixed by "socket",

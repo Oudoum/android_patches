@@ -500,6 +500,53 @@
       "validation": "PASS: exact tree replay"
     },
     {
+      "project": "kernel/samsung/universal8890",
+      "base": "dcadf09ba0cd4215c5e1ad4bff2bf6edc4f85db2",
+      "head": "af641a4c98339f90a8eef7537a53f6b1a9b85025",
+      "upstream_url": "https://github.com/8890q/android_kernel_samsung_universal8890",
+      "upstream_branch": "lineage-24.0",
+      "patches": [
+        {
+          "file": "kernel/samsung/universal8890/0001-capabilities-backport-CAP_PERFMON-and-perf-permissio.patch",
+          "commit": "77ac1a114e5812e0202f0f4b53ddb477fceebacd",
+          "subject": "capabilities: backport CAP_PERFMON and perf permission checks",
+          "patch_id": "3bc17446c096593633855f767b5ace4bb795a7e8",
+          "sha256": "fdef2b9cab89dd7e77507df37e249be954972b1dee58e55abc92dc0b21b7fb03"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0002-bpf-backport-CAP_BPF-with-separate-monitoring-permis.patch",
+          "commit": "0ab740a6afad489a5b63a6046de00f2406015616",
+          "subject": "bpf: backport CAP_BPF with separate monitoring permissions",
+          "patch_id": "75f2cee52b0402981f6b1803fba0c2b3f7a9293e",
+          "sha256": "bb135b0dadeaa9c9349c60f9d48819f4130bde4525f49c3ab7e4d1b114fd15ac"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0003-bpf-Restore-behaviour-of-CAP_SYS_ADMIN-allowing-the-.patch",
+          "commit": "91b7181a5dee077b6366e8e2df87202ccf67c1ec",
+          "subject": "bpf: Restore behaviour of CAP_SYS_ADMIN allowing the loading of networking bpf programs",
+          "patch_id": "069d3c8ec3c64c1769606c33748408e4c70156fe",
+          "sha256": "cad2932881b0f276ec445e7d3f2cbdbcb491e0852bac4337e6490d11009b5f65"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0004-capabilities-backport-CAP_CHECKPOINT_RESTORE-permiss.patch",
+          "commit": "e2fb6591211b01b271bb4bfdcedb7aabda75614d",
+          "subject": "capabilities: backport CAP_CHECKPOINT_RESTORE permission checks",
+          "patch_id": "00e6dfe9c02ac6833761506ded4af6757081ec67",
+          "sha256": "70f0628c6dd5fe35bba4c1553e432a005db8c9129700bcdd30b364db7446c4b2"
+        },
+        {
+          "file": "kernel/samsung/universal8890/0005-prctl-Allow-local-CAP_CHECKPOINT_RESTORE-to-change-p.patch",
+          "commit": "af641a4c98339f90a8eef7537a53f6b1a9b85025",
+          "subject": "prctl: Allow local CAP_CHECKPOINT_RESTORE to change /proc/self/exe",
+          "patch_id": "9aaf7448587aa83571bb3028609ee506f304fafc",
+          "sha256": "bd145cebd6e5cf9249689bdb0cbbd29abddd3b47de1d3023a054f3a93e817e0d"
+        }
+      ],
+      "base_tree": "8fe0d80ad40dd8f157b379eca962c3a822b68caf",
+      "target_tree": "7befbb6ee2994fd65aca0a9f23d69ef9ad1f06e5",
+      "validation": "PASS: exact tree replay"
+    },
+    {
       "project": "packages/modules/Connectivity",
       "base": "7c04d866538e6f689823b769fb5c1e614ca0e295",
       "head": "88110bc860ca14bcf3a7cc31ca1b72853cb8f822",

@@ -1,0 +1,34 @@
+From 91b7181a5dee077b6366e8e2df87202ccf67c1ec Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Maciej=20=C5=BBenczykowski?= <maze@google.com>
+Date: Sat, 20 Jun 2020 14:26:16 -0700
+Subject: [PATCH 3/5] bpf: Restore behaviour of CAP_SYS_ADMIN allowing the
+ loading of networking bpf programs
+
+Restore the CAP_SYS_ADMIN fallback for networking program loads. Android
+bpfloader uses SYS_ADMIN without NET_ADMIN; keep its existing access
+while also allowing the BPF plus NET_ADMIN capability combination.
+
+Upstream commit: b338cb921e6739ff59ce32f43342779fe5ffa732
+Backport notes: apply the fallback to the program types present in the
+Exynos 8890 tree. Adapted by ivanmeler.
+
+Signed-off-by: ivanmeler <i_ivan@windowslive.com>
+---
+ kernel/bpf/syscall.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index 7d1178772def..c8dab72bc0d5 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -1198,8 +1198,9 @@ static int bpf_prog_load(union bpf_attr *attr)
+ 	    !bpf_capable())
+ 		return -EPERM;
+ 
++	/* Preserve SYS_ADMIN-only loaders, including Android bpfloader. */
+ 	if (is_net_admin_prog_type(type) &&
+-	    !capable(CAP_NET_ADMIN))
++	    !capable(CAP_NET_ADMIN) && !capable(CAP_SYS_ADMIN))
+ 		return -EPERM;
+ 	if (is_perfmon_prog_type(type) && !perfmon_capable())
+ 		return -EPERM;

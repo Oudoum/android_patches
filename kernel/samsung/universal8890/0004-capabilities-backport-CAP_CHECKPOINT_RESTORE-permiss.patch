@@ -1,0 +1,117 @@
+From e2fb6591211b01b271bb4bfdcedb7aabda75614d Mon Sep 17 00:00:00 2001
+From: Adrian Reber <areber@redhat.com>
+Date: Sun, 19 Jul 2020 12:04:11 +0200
+Subject: [PATCH 4/5] capabilities: backport CAP_CHECKPOINT_RESTORE permission
+ checks
+
+Add capability 40, its namespace-aware helper and SELinux capability2
+permission. Use the helper for map_files and ns_last_pid, retaining
+CAP_SYS_ADMIN compatibility and the initial user namespace restriction
+on following map_files links.
+
+Checkpoint interfaces retain their existing CONFIG_CHECKPOINT_RESTORE
+guards; clone3 and newer checkpoint APIs are outside this backport.
+
+Adapted from Linux commits:
+commit 124ea650d307 ("capabilities: Introduce CAP_CHECKPOINT_RESTORE")
+commit 12886f8ab10c ("proc: allow access in init userns for map_files with CAP_CHECKPOINT_RESTORE")
+commit b9a3db92e1a1 ("pid_namespace: use checkpoint_restore_ns_capable() for ns_last_pid")
+
+Backport notes: combine the capability definition with available proc
+permission checks. Adapted by ivanmeler.
+
+Signed-off-by: ivanmeler <i_ivan@windowslive.com>
+---
+ fs/proc/base.c                      | 8 ++++----
+ include/linux/capability.h          | 6 ++++++
+ include/uapi/linux/capability.h     | 5 ++++-
+ kernel/pid_namespace.c              | 2 +-
+ security/selinux/include/classmap.h | 5 +++--
+ 5 files changed, 18 insertions(+), 8 deletions(-)
+
+diff --git a/fs/proc/base.c b/fs/proc/base.c
+index b1e806dfb47f..a3277f6b2bd8 100644
+--- a/fs/proc/base.c
++++ b/fs/proc/base.c
+@@ -1991,14 +1991,14 @@ struct map_files_info {
+ };
+ 
+ /*
+- * Only allow CAP_SYS_ADMIN to follow the links, due to concerns about how the
+- * symlinks may be used to bypass permissions on ancestor directories in the
+- * path to the file in question.
++ * Only allow CAP_SYS_ADMIN and CAP_CHECKPOINT_RESTORE to follow the links,
++ * due to concerns about how the symlinks may bypass permissions on ancestor
++ * directories in the path to the file in question.
+  */
+ static const char *
+ proc_map_files_follow_link(struct dentry *dentry, void **cookie)
+ {
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!checkpoint_restore_ns_capable(&init_user_ns))
+ 		return ERR_PTR(-EPERM);
+ 
+ 	return proc_pid_follow_link(dentry, NULL);
+diff --git a/include/linux/capability.h b/include/linux/capability.h
+index a68476387994..5209679f5c8c 100644
+--- a/include/linux/capability.h
++++ b/include/linux/capability.h
+@@ -260,6 +260,12 @@ static inline bool bpf_capable(void)
+ 	return capable(CAP_BPF) || capable(CAP_SYS_ADMIN);
+ }
+ 
++static inline bool checkpoint_restore_ns_capable(struct user_namespace *ns)
++{
++	return ns_capable(ns, CAP_CHECKPOINT_RESTORE) ||
++		ns_capable(ns, CAP_SYS_ADMIN);
++}
++
+ /* audit system wants to get cap info from files as well */
+ extern int get_vfs_caps_from_disk(const struct dentry *dentry, struct cpu_vfs_cap_data *cpu_caps);
+ 
+diff --git a/include/uapi/linux/capability.h b/include/uapi/linux/capability.h
+index 89c253c56bcc..122800428fb1 100644
+--- a/include/uapi/linux/capability.h
++++ b/include/uapi/linux/capability.h
+@@ -363,7 +363,10 @@ struct vfs_cap_data {
+  */
+ #define CAP_BPF			39
+ 
+-#define CAP_LAST_CAP         CAP_BPF
++/* Allow checkpoint/restore related operations, including ns_last_pid. */
++#define CAP_CHECKPOINT_RESTORE	40
++
++#define CAP_LAST_CAP         CAP_CHECKPOINT_RESTORE
+ 
+ #define cap_valid(x) ((x) >= 0 && (x) <= CAP_LAST_CAP)
+ 
+diff --git a/kernel/pid_namespace.c b/kernel/pid_namespace.c
+index a22e3288e2b5..b8b37dbf6c82 100644
+--- a/kernel/pid_namespace.c
++++ b/kernel/pid_namespace.c
+@@ -276,7 +276,7 @@ static int pid_ns_ctl_handler(struct ctl_table *table, int write,
+ 	struct pid_namespace *pid_ns = task_active_pid_ns(current);
+ 	struct ctl_table tmp = *table;
+ 
+-	if (write && !ns_capable(pid_ns->user_ns, CAP_SYS_ADMIN))
++	if (write && !checkpoint_restore_ns_capable(pid_ns->user_ns))
+ 		return -EPERM;
+ 
+ 	/*
+diff --git a/security/selinux/include/classmap.h b/security/selinux/include/classmap.h
+index 42b7de2e33a4..c740567201b6 100644
+--- a/security/selinux/include/classmap.h
++++ b/security/selinux/include/classmap.h
+@@ -22,9 +22,10 @@
+ 	    "audit_control", "setfcap"
+ 
+ #define COMMON_CAP2_PERMS  "mac_override", "mac_admin", "syslog", \
+-		"wake_alarm", "block_suspend", "audit_read", "perfmon", "bpf"
++		"wake_alarm", "block_suspend", "audit_read", "perfmon", "bpf", \
++		"checkpoint_restore"
+ 
+-#if CAP_LAST_CAP > CAP_BPF
++#if CAP_LAST_CAP > CAP_CHECKPOINT_RESTORE
+ #error New capability defined, please update COMMON_CAP2_PERMS.
+ #endif
+ 

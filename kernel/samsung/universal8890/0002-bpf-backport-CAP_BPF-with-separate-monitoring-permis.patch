@@ -1,0 +1,353 @@
+From 0ab740a6afad489a5b63a6046de00f2406015616 Mon Sep 17 00:00:00 2001
+From: Alexei Starovoitov <ast@kernel.org>
+Date: Wed, 13 May 2020 16:03:53 -0700
+Subject: [PATCH 2/5] bpf: backport CAP_BPF with separate monitoring
+ permissions
+
+Backport capability 39 and the permission split to this tree's BPF
+program types, privileged map types, BTF, ID lookup and loader checks.
+Network programs require BPF plus NET_ADMIN; tracing requires BPF plus
+PERFMON. Preserve SYS_ADMIN as the compatibility fallback for BPF and PERFMON.
+
+Keep pointer-disclosing verifier and array-map privileges behind PERFMON.
+The legacy raw instruction dumper does not sanitize kernel addresses, so
+require monitoring privilege in addition to BPF for raw dumps. Restrict
+probe_write_user to SYS_ADMIN as upstream does. A denied trace_printk
+helper must return NULL instead of falling through to get_socket_cookie.
+
+Adapted from Linux commits:
+commit a17b53c4a4b5 ("bpf, capability: Introduce CAP_BPF")
+commit 2c78ee898d8f ("bpf: Implement CAP_BPF")
+
+Features absent from this tree, such as bounded loops and bpf-to-bpf
+calls, are not advertised or introduced by this permission backport.
+
+Backport notes: combine capability definition and permission split; adapt
+to existing program types and verifier. Adapted by ivanmeler.
+
+Signed-off-by: ivanmeler <i_ivan@windowslive.com>
+---
+ include/linux/capability.h          |  5 +++
+ include/uapi/linux/capability.h     | 10 +++++-
+ kernel/bpf/arraymap.c               |  2 +-
+ kernel/bpf/core.c                   |  2 +-
+ kernel/bpf/hashtab.c                |  4 +--
+ kernel/bpf/lpm_trie.c               |  2 +-
+ kernel/bpf/stackmap.c               |  2 +-
+ kernel/bpf/syscall.c                | 50 ++++++++++++++++++++++++-----
+ kernel/bpf/verifier.c               |  4 +--
+ kernel/trace/bpf_trace.c            |  3 ++
+ net/core/bpf_sk_storage.c           |  2 +-
+ net/core/filter.c                   |  3 +-
+ security/selinux/include/classmap.h |  4 +--
+ 13 files changed, 72 insertions(+), 21 deletions(-)
+
+diff --git a/include/linux/capability.h b/include/linux/capability.h
+index 55dfbfafb43b..a68476387994 100644
+--- a/include/linux/capability.h
++++ b/include/linux/capability.h
+@@ -255,6 +255,11 @@ static inline bool perfmon_capable(void)
+ 	return capable(CAP_PERFMON) || capable(CAP_SYS_ADMIN);
+ }
+ 
++static inline bool bpf_capable(void)
++{
++	return capable(CAP_BPF) || capable(CAP_SYS_ADMIN);
++}
++
+ /* audit system wants to get cap info from files as well */
+ extern int get_vfs_caps_from_disk(const struct dentry *dentry, struct cpu_vfs_cap_data *cpu_caps);
+ 
+diff --git a/include/uapi/linux/capability.h b/include/uapi/linux/capability.h
+index 4eeb11bc4438..89c253c56bcc 100644
+--- a/include/uapi/linux/capability.h
++++ b/include/uapi/linux/capability.h
+@@ -260,6 +260,7 @@ struct vfs_cap_data {
+ /* Allow setting encryption key on loopback filesystem */
+ /* Allow setting zone reclaim policy */
+ 
++/* Allow everything under CAP_BPF and CAP_PERFMON for compatibility. */
+ #define CAP_SYS_ADMIN        21
+ 
+ /* Allow use of reboot() */
+@@ -355,7 +356,14 @@ struct vfs_cap_data {
+ /* Allow privileged performance monitoring and observability. */
+ #define CAP_PERFMON		38
+ 
+-#define CAP_LAST_CAP         CAP_PERFMON
++/*
++ * Allow privileged BPF operations. Loading networking programs also requires
++ * CAP_NET_ADMIN; tracing programs and pointer disclosure require CAP_PERFMON.
++ * CAP_SYS_ADMIN remains a backwards-compatible fallback for both capabilities.
++ */
++#define CAP_BPF			39
++
++#define CAP_LAST_CAP         CAP_BPF
+ 
+ #define cap_valid(x) ((x) >= 0 && (x) <= CAP_LAST_CAP)
+ 
+diff --git a/kernel/bpf/arraymap.c b/kernel/bpf/arraymap.c
+index f3a341532e3e..571f548d56e8 100644
+--- a/kernel/bpf/arraymap.c
++++ b/kernel/bpf/arraymap.c
+@@ -58,7 +58,7 @@ static struct bpf_map *array_map_alloc(union bpf_attr *attr)
+ {
+ 	bool percpu = attr->map_type == BPF_MAP_TYPE_PERCPU_ARRAY;
+ 	u32 elem_size, index_mask, max_entries;
+-	bool unpriv = !capable(CAP_SYS_ADMIN);
++	bool unpriv = !perfmon_capable();
+ 	u64 cost, array_size, mask64;
+ 	struct bpf_array *array;
+ 	int ret;
+diff --git a/kernel/bpf/core.c b/kernel/bpf/core.c
+index 13537608c448..84b84e6ead23 100644
+--- a/kernel/bpf/core.c
++++ b/kernel/bpf/core.c
+@@ -358,7 +358,7 @@ static bool bpf_prog_kallsyms_verify_off(const struct bpf_prog *fp)
+ void bpf_prog_kallsyms_add(struct bpf_prog *fp)
+ {
+ 	if (!bpf_prog_kallsyms_candidate(fp) ||
+-	    !capable(CAP_SYS_ADMIN))
++	    !bpf_capable())
+ 		return;
+ 
+ 	spin_lock_bh(&bpf_lock);
+diff --git a/kernel/bpf/hashtab.c b/kernel/bpf/hashtab.c
+index 972cac8af9da..d7023763924d 100644
+--- a/kernel/bpf/hashtab.c
++++ b/kernel/bpf/hashtab.c
+@@ -232,9 +232,9 @@ static struct bpf_map *htab_map_alloc(union bpf_attr *attr)
+ 	int err, i;
+ 	u64 cost;
+ 
+-	if (lru && !capable(CAP_SYS_ADMIN))
++	if (lru && !bpf_capable())
+ 		/* LRU implementation is much complicated than other
+-		 * maps.  Hence, limit to CAP_SYS_ADMIN for now.
++		 * maps.  Hence, limit to CAP_BPF.
+ 		 */
+ 		return ERR_PTR(-EPERM);
+ 
+diff --git a/kernel/bpf/lpm_trie.c b/kernel/bpf/lpm_trie.c
+index 9a3a756035a9..5a44d8d98ef7 100644
+--- a/kernel/bpf/lpm_trie.c
++++ b/kernel/bpf/lpm_trie.c
+@@ -543,7 +543,7 @@ static struct bpf_map *trie_alloc(union bpf_attr *attr)
+ 	u64 cost = sizeof(*trie), cost_per_node;
+ 	int ret;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!bpf_capable())
+ 		return ERR_PTR(-EPERM);
+ 
+ 	/* check sanity of attributes */
+diff --git a/kernel/bpf/stackmap.c b/kernel/bpf/stackmap.c
+index 22857ee8ce70..42f3dea48d16 100644
+--- a/kernel/bpf/stackmap.c
++++ b/kernel/bpf/stackmap.c
+@@ -60,7 +60,7 @@ static struct bpf_map *stack_map_alloc(union bpf_attr *attr)
+ 	u64 cost, n_buckets;
+ 	int err;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!bpf_capable())
+ 		return ERR_PTR(-EPERM);
+ 
+ 	if (attr->map_flags & ~STACK_CREATE_FLAG_MASK)
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index 23a523a81074..7d1178772def 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -1136,6 +1136,33 @@ EXPORT_SYMBOL_GPL(bpf_prog_get_type);
+ /* last field in 'union bpf_attr' used by this command */
+ #define	BPF_PROG_LOAD_LAST_FIELD line_info_cnt
+ 
++static bool is_net_admin_prog_type(enum bpf_prog_type type)
++{
++	switch (type) {
++	case BPF_PROG_TYPE_SCHED_CLS:
++	case BPF_PROG_TYPE_SCHED_ACT:
++	case BPF_PROG_TYPE_XDP:
++	case BPF_PROG_TYPE_CGROUP_SOCK:
++	case BPF_PROG_TYPE_CGROUP_SOCK_ADDR:
++	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
++		return true;
++	default:
++		return false;
++	}
++}
++
++static bool is_perfmon_prog_type(enum bpf_prog_type type)
++{
++	switch (type) {
++	case BPF_PROG_TYPE_KPROBE:
++	case BPF_PROG_TYPE_TRACEPOINT:
++	case BPF_PROG_TYPE_PERF_EVENT:
++		return true;
++	default:
++		return false;
++	}
++}
++
+ static int bpf_prog_load(union bpf_attr *attr)
+ {
+ 	enum bpf_prog_type type = attr->prog_type;
+@@ -1168,7 +1195,13 @@ static int bpf_prog_load(union bpf_attr *attr)
+ 
+ 	if (type != BPF_PROG_TYPE_SOCKET_FILTER &&
+ 	    type != BPF_PROG_TYPE_CGROUP_SKB &&
+-	    !capable(CAP_SYS_ADMIN))
++	    !bpf_capable())
++		return -EPERM;
++
++	if (is_net_admin_prog_type(type) &&
++	    !capable(CAP_NET_ADMIN))
++		return -EPERM;
++	if (is_perfmon_prog_type(type) && !perfmon_capable())
+ 		return -EPERM;
+ 
+ 	/* plain bpf_prog allocation */
+@@ -1490,7 +1523,7 @@ static int bpf_obj_get_next_id(const union bpf_attr *attr,
+ 	if (CHECK_ATTR(BPF_OBJ_GET_NEXT_ID) || next_id >= INT_MAX)
+ 		return -EINVAL;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!bpf_capable())
+ 		return -EPERM;
+ 
+ 	next_id++;
+@@ -1516,7 +1549,7 @@ static int bpf_prog_get_fd_by_id(const union bpf_attr *attr)
+ 	if (CHECK_ATTR(BPF_PROG_GET_FD_BY_ID))
+ 		return -EINVAL;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!bpf_capable())
+ 		return -EPERM;
+ 
+ 	spin_lock_bh(&prog_idr_lock);
+@@ -1550,7 +1583,7 @@ static int bpf_map_get_fd_by_id(const union bpf_attr *attr)
+ 	    attr->open_flags & ~BPF_OBJ_FLAG_MASK)
+ 		return -EINVAL;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!bpf_capable())
+ 		return -EPERM;
+ 
+ 	f_flags = bpf_get_file_flag(attr->open_flags);
+@@ -1640,7 +1673,8 @@ static int bpf_prog_get_info_by_fd(struct bpf_prog *prog,
+ 				return -EFAULT;
+ 	}
+ 
+-	if (!capable(CAP_SYS_ADMIN)) {
++	/* Raw instruction dumps can contain kernel pointers. */
++	if (!bpf_capable() || !perfmon_capable()) {
+ 		info.jited_prog_len = 0;
+ 		info.xlated_prog_len = 0;
+ 		goto done;
+@@ -1766,7 +1800,7 @@ static int bpf_btf_load(const union bpf_attr *attr)
+ 	if (CHECK_ATTR(BPF_BTF_LOAD))
+ 		return -EINVAL;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!bpf_capable())
+ 		return -EPERM;
+ 
+ 	return btf_new_fd(attr);
+@@ -1779,7 +1813,7 @@ static int bpf_btf_get_fd_by_id(const union bpf_attr *attr)
+ 	if (CHECK_ATTR(BPF_BTF_GET_FD_BY_ID))
+ 		return -EINVAL;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!bpf_capable())
+ 		return -EPERM;
+ 
+ 	return btf_get_fd_by_id(attr->btf_id);
+@@ -1790,7 +1824,7 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
+ 	union bpf_attr attr;
+ 	int err;
+ 
+-	if (sysctl_unprivileged_bpf_disabled && !capable(CAP_SYS_ADMIN))
++	if (sysctl_unprivileged_bpf_disabled && !bpf_capable())
+ 		return -EPERM;
+ 
+ 	if (!access_ok(VERIFY_READ, uattr, 1))
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 55ad88417c8b..cb1025e0c341 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -3968,7 +3968,7 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr)
+ 	if (ret < 0)
+ 		goto skip_full_check;
+ 
+-	env->allow_ptr_leaks = capable(CAP_SYS_ADMIN);
++	env->allow_ptr_leaks = perfmon_capable();
+ 
+ 	ret = do_check(env);
+ 
+@@ -4067,7 +4067,7 @@ int bpf_analyzer(struct bpf_prog *prog, const struct bpf_ext_analyzer_ops *ops,
+ 	if (ret < 0)
+ 		goto skip_full_check;
+ 
+-	env->allow_ptr_leaks = capable(CAP_SYS_ADMIN);
++	env->allow_ptr_leaks = perfmon_capable();
+ 
+ 	ret = do_check(env);
+ 
+diff --git a/kernel/trace/bpf_trace.c b/kernel/trace/bpf_trace.c
+index 971a88b30602..864d935b575d 100644
+--- a/kernel/trace/bpf_trace.c
++++ b/kernel/trace/bpf_trace.c
+@@ -157,6 +157,9 @@ static const struct bpf_func_proto bpf_probe_write_user_proto = {
+ 
+ static const struct bpf_func_proto *bpf_get_probe_write_proto(void)
+ {
++	if (!capable(CAP_SYS_ADMIN))
++		return NULL;
++
+ 	pr_warn_ratelimited("%s[%d] is installing a program with bpf_probe_write_user helper that may corrupt user memory!",
+ 			    current->comm, task_pid_nr(current));
+ 
+diff --git a/net/core/bpf_sk_storage.c b/net/core/bpf_sk_storage.c
+index fc2f6e53cf29..4e850f2bf0fe 100644
+--- a/net/core/bpf_sk_storage.c
++++ b/net/core/bpf_sk_storage.c
+@@ -577,7 +577,7 @@ static int bpf_sk_storage_map_alloc_check(union bpf_attr *attr)
+ 	    attr->key_size != sizeof(int) || !attr->value_size)
+ 		return -EINVAL;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
++	if (!bpf_capable())
+ 		return -EPERM;
+ 
+ 	if (attr->value_size >= KMALLOC_MAX_SIZE -
+diff --git a/net/core/filter.c b/net/core/filter.c
+index 25d8f1cef13b..7a02f3372883 100644
+--- a/net/core/filter.c
++++ b/net/core/filter.c
+@@ -2835,8 +2835,9 @@ sk_filter_func_proto(enum bpf_func_id func_id)
+ 	case BPF_FUNC_ringbuf_query:
+ 		return &bpf_ringbuf_query_proto;
+ 	case BPF_FUNC_trace_printk:
+-		if (capable(CAP_SYS_ADMIN))
++		if (perfmon_capable())
+ 			return bpf_get_trace_printk_proto();
++		return NULL;
+ 	case BPF_FUNC_get_socket_cookie:
+ 		return &bpf_get_socket_cookie_proto;
+ 	case BPF_FUNC_get_socket_uid:
+diff --git a/security/selinux/include/classmap.h b/security/selinux/include/classmap.h
+index 4be4fa1fd80b..42b7de2e33a4 100644
+--- a/security/selinux/include/classmap.h
++++ b/security/selinux/include/classmap.h
+@@ -22,9 +22,9 @@
+ 	    "audit_control", "setfcap"
+ 
+ #define COMMON_CAP2_PERMS  "mac_override", "mac_admin", "syslog", \
+-		"wake_alarm", "block_suspend", "audit_read", "perfmon"
++		"wake_alarm", "block_suspend", "audit_read", "perfmon", "bpf"
+ 
+-#if CAP_LAST_CAP > CAP_PERFMON
++#if CAP_LAST_CAP > CAP_BPF
+ #error New capability defined, please update COMMON_CAP2_PERMS.
+ #endif
+ 
